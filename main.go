@@ -48,6 +48,7 @@ var icons = map[string]string{
 }
 var decodedIcons = map[string][]byte{}
 var flags = map[string]interface{}{}
+var lastAlert string
 
 func main() {
 	flags["url"] = flag.String("url", "", "Your nightscout url e.g. https://example.herokuapp.com")
@@ -111,16 +112,25 @@ func getBg() string {
 	if err != nil {
 		fmt.Println(err)
 	}
-	lastValue = float64(mgdl) / mgdltommol
 	direction, ok := directions[stringBody[3]]
+	lastValue = float64(mgdl) / mgdltommol
 	if !ok {
 		direction = "-"
-		alert("Failed to get BG direction", fmt.Sprintf("%.1f", lastValue))
-	} else {
+		if lastAlert != "failed" {
+			alert("Failed to get BG direction", fmt.Sprintf("%.1f", lastValue))
+			lastAlert = "failed"
+		}
+	} else if float64(mgdl)/mgdltommol != lastValue {
 		if _, ok := rising[stringBody[3]]; ok {
-			alert("Rising fast", fmt.Sprintf("%.1f %s", lastValue, direction))
+			if lastAlert != "rising" {
+				alert("Rising fast", fmt.Sprintf("%.1f %s", lastValue, direction))
+				lastAlert = "rising"
+			}
 		} else if _, ok := falling[stringBody[3]]; ok {
-			alert("Falling fast", fmt.Sprintf("%.1f %s", lastValue, direction))
+			if lastAlert != "falling" {
+				alert("Falling fast", fmt.Sprintf("%.1f %s", lastValue, direction))
+				lastAlert = "falling"
+			}
 		}
 	}
 
