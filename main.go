@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"log/syslog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -130,7 +132,17 @@ var (
 )
 
 func main() {
+	syslog, err := syslog.New(syslog.LOG_INFO, "CGM")
+	if err != nil {
+		panic("Unable to connect to syslog")
+	}
+	log.SetOutput(syslog)
+
 	flag.Parse()
+
+	if *args.Url == "" {
+		log.Fatal("A nightscout URL is required")
+	}
 
 	systray.Run(func() {
 		open := systray.AddMenuItem("Open in browser", "")
@@ -166,7 +178,7 @@ func (b *bg) alert() {
 		defer file.Close()
 		img, err := decodedIcon("red")
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 		} else {
 			file.Write(img)
 			filename = file.Name()
@@ -208,17 +220,17 @@ func (b *bg) getBg() string {
 	url := *args.Url + "/api/v1/entries?count=1"
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 	stringBody := strings.Split(string(body), "\t")
 	mgdl, err := strconv.Atoi(stringBody[2])
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 	direction := strings.ReplaceAll(stringBody[3], "\"", "")
 	_, ok := directions[direction]
@@ -246,7 +258,7 @@ func (b bg) getIcon() []byte {
 
 	img, err := decodedIcon(i)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 
 	return img
