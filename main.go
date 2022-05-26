@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"log/syslog"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -135,7 +136,8 @@ var (
 			Base64: "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",
 		},
 	}
-	lastBg bg
+	lastBg        bg
+	timeToInRange *systray.MenuItem
 )
 
 func main() {
@@ -152,6 +154,8 @@ func main() {
 	}
 
 	systray.Run(func() {
+		timeToInRange = systray.AddMenuItem("", "")
+		timeToInRange.Hide()
 		open := systray.AddMenuItem("Open in browser", "")
 		refresh := systray.AddMenuItem("Refresh", "")
 		quit := systray.AddMenuItem("Quit", "")
@@ -232,20 +236,13 @@ func (b *bg) getAlerts() (alerts []string) {
 		}
 	}
 
-	if b.Value.Timestamp != b.PreviousValue.Timestamp {
-		if b.Value.Value < b.PreviousValue.Value {
-			seconds := (b.Value.Timestamp - b.PreviousValue.Timestamp) / 1000
-			changePerSecond := (b.PreviousValue.Value - b.Value.Value) / float64(seconds)
-			if b.Value.Value-changePerSecond*predictLowSeconds < *args.Low {
-				var minutesToLow int
-				secondsToLow := int((b.Value.Value - *args.Low) / changePerSecond)
-				if secondsToLow >= 60 {
-					minutesToLow = int(secondsToLow / 60)
-					secondsToLow = secondsToLow - minutesToLow*60
-				}
-				alerts = append(alerts, fmt.Sprintf("%s %dm%ds", "Predicted Low!", minutesToLow, secondsToLow))
-			}
+	minutesToLow := b.getMinutesToLow()
+	if minutesToLow > 0 {
+		var plural string
+		if minutesToLow > 1 {
+			plural = "s"
 		}
+		alerts = append(alerts, fmt.Sprintf("%s %d minute%s", "Predicted Low!", minutesToLow, plural))
 	}
 
 	return
@@ -284,6 +281,13 @@ func (b *bg) getBg() string {
 		Value:     float64(mgdl) / mgdltommol,
 	}
 	b.alert()
+	minutesToInRange := b.getMinutesToInRange()
+	if minutesToInRange > 0 {
+		timeToInRange.SetTitle(fmt.Sprintf("Time till in range: %d minutes", minutesToInRange))
+		timeToInRange.Show()
+	} else {
+		timeToInRange.Hide()
+	}
 
 	return fmt.Sprintf("%.1f %s", b.Value.Value, b.Direction.Value)
 }
@@ -304,6 +308,43 @@ func (b bg) getIcon() []byte {
 	}
 
 	return img
+}
+
+func (b bg) getMinutesToLow() (minutesToLow int) {
+	if b.Value.Timestamp != b.PreviousValue.Timestamp && b.Value.Value < b.PreviousValue.Value {
+		seconds := (b.Value.Timestamp - b.PreviousValue.Timestamp) / 1000
+		changePerSecond := (b.PreviousValue.Value - b.Value.Value) / float64(seconds)
+		if b.Value.Value-changePerSecond*predictLowSeconds < *args.Low {
+			secondsToLow := int((b.Value.Value - *args.Low) / changePerSecond)
+			minutesToLow = 1
+			if secondsToLow >= 60 {
+				minutesToLow = int(secondsToLow / 60)
+			}
+		}
+	}
+
+	return
+}
+
+func (b bg) getMinutesToInRange() (minutesToInRange int) {
+	if b.Value.Timestamp != b.PreviousValue.Timestamp {
+		seconds := math.Abs(float64((b.Value.Timestamp - b.PreviousValue.Timestamp) / 1000))
+		changePerSecond := math.Abs((b.PreviousValue.Value - b.Value.Value) / seconds)
+		var secondsToInRange int
+		if b.Value.isHigh() && b.Value.Value < b.PreviousValue.Value {
+			secondsToInRange = int((b.Value.Value - *args.High) / changePerSecond)
+		} else if b.Value.isLow() && b.Value.Value > b.PreviousValue.Value {
+			secondsToInRange = int((*args.Low - b.Value.Value) / changePerSecond)
+		}
+		if secondsToInRange > 0 {
+			minutesToInRange = 1
+			if secondsToInRange >= 60 {
+				minutesToInRange = int(secondsToInRange / 60)
+			}
+		}
+	}
+
+	return
 }
 
 func (b bgValue) isUrgentHigh() bool {
