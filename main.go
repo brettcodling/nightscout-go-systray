@@ -20,12 +20,19 @@ import (
 )
 
 const mgdltommol = 18.018018018
+const predictLowSeconds = 3600
 
 type bg struct {
-	Direction     direction
-	LastAlert     string
-	PreviousValue float64
-	Value         float64
+	Direction          direction
+	LastBgAlert        string
+	LastDirectionAlert string
+	PreviousValue      bgValue
+	Value              bgValue
+}
+
+type bgValue struct {
+	Timestamp int64
+	Value     float64
 }
 
 type direction struct {
@@ -168,8 +175,8 @@ func main() {
 }
 
 func (b *bg) alert() {
-	title, text := b.getAlertTexts()
-	if title == "" {
+	alerts := b.getAlerts()
+	if len(alerts) < 1 {
 		return
 	}
 	var filename string
@@ -185,30 +192,58 @@ func (b *bg) alert() {
 		}
 	}
 
-	beeep.Alert(title, text, filename)
+	for _, alert := range alerts {
+		beeep.Alert("CGM", alert, filename)
+	}
 	if filename != "" {
 		os.Remove(filename)
 	}
 }
 
-func (b *bg) getAlertTexts() (title string, text string) {
+func (b *bg) getAlerts() (alerts []string) {
 	if b.Direction.IsFallback {
-		if b.LastAlert != "falied" {
-			title = "Failed to get BG direction"
-			text = fmt.Sprintf("%.1f", b.Value)
-			b.LastAlert = "failed"
+		if b.LastDirectionAlert != "falied" {
+			alerts = append(alerts, fmt.Sprintf("%s. %.1f", "Failed to get BG direction", b.Value.Value))
+			b.LastDirectionAlert = "failed"
 		}
-	} else if b.Value != b.PreviousValue {
-		text = fmt.Sprintf("%.1f %s", b.Value, b.Direction.Value)
+	} else if b.Value.Value != b.PreviousValue.Value {
 		if b.Direction.IsRising {
-			if b.LastAlert != "rising" {
-				title = "Rising fast"
-				b.LastAlert = "rising"
+			if b.LastDirectionAlert != "rising" {
+				alerts = append(alerts, fmt.Sprintf("%s %.1f %s", "Rising fast!", b.Value.Value, b.Direction.Value))
+				b.LastDirectionAlert = "rising"
 			}
 		} else if b.Direction.IsFalling {
-			if b.LastAlert != "falling" {
-				title = "Falling fast"
-				b.LastAlert = "falling"
+			if b.LastDirectionAlert != "falling" {
+				alerts = append(alerts, fmt.Sprintf("%s %.1f %s", "Falling fast!", b.Value.Value, b.Direction.Value))
+				b.LastDirectionAlert = "falling"
+			}
+		}
+	}
+
+	if b.Value.isLow() {
+		if b.LastBgAlert != "low" {
+			alerts = append(alerts, fmt.Sprintf("%s %.1f %s", "Low!", b.Value.Value, b.Direction.Value))
+			b.LastBgAlert = "low"
+		}
+	} else if b.Value.isUrgentHigh() {
+		if b.LastBgAlert != "high" {
+			alerts = append(alerts, fmt.Sprintf("%s %.1f %s", "Urgent Hight!", b.Value.Value, b.Direction.Value))
+			b.LastBgAlert = "high"
+		}
+	}
+
+	if b.Value.Timestamp != b.PreviousValue.Timestamp {
+		if b.Value.Value < b.PreviousValue.Value {
+			seconds := (b.Value.Timestamp - b.PreviousValue.Timestamp) / 1000
+			changePerSecond := (b.PreviousValue.Value - b.Value.Value) / float64(seconds)
+			if b.Value.Value-changePerSecond*predictLowSeconds < *args.Low {
+				var minutesToLow int
+				secondsToLow := int((b.Value.Value - *args.Low) / changePerSecond)
+				if secondsToLow >= 60 {
+					minutesToLow = int(secondsToLow / 60)
+					secondsToLow = secondsToLow - minutesToLow*60
+				}
+				alerts = append(alerts, fmt.Sprintf("%s %dm%ds", "Predicted Low!", minutesToLow, secondsToLow))
 			}
 		}
 	}
@@ -228,6 +263,10 @@ func (b *bg) getBg() string {
 		log.Println(err)
 	}
 	stringBody := strings.Split(string(body), "\t")
+	timestamp, err := strconv.ParseInt(stringBody[1], 10, 64)
+	if err != nil {
+		log.Println(err)
+	}
 	mgdl, err := strconv.Atoi(stringBody[2])
 	if err != nil {
 		log.Println(err)
@@ -240,17 +279,20 @@ func (b *bg) getBg() string {
 
 	b.Direction = directions[direction]
 	b.PreviousValue = b.Value
-	b.Value = float64(mgdl) / mgdltommol
+	b.Value = bgValue{
+		Timestamp: timestamp,
+		Value:     float64(mgdl) / mgdltommol,
+	}
 	b.alert()
 
-	return fmt.Sprintf("%.1f %s", b.Value, b.Direction.Value)
+	return fmt.Sprintf("%.1f %s", b.Value.Value, b.Direction.Value)
 }
 
 func (b bg) getIcon() []byte {
 	var i string
-	if b.Value < *args.Low || b.Value > *args.Urgenthigh {
+	if b.Value.isLow() || b.Value.isUrgentHigh() {
 		i = "red"
-	} else if b.Value > *args.High {
+	} else if b.Value.isHigh() {
 		i = "orange"
 	} else {
 		i = "green"
@@ -262,6 +304,18 @@ func (b bg) getIcon() []byte {
 	}
 
 	return img
+}
+
+func (b bgValue) isUrgentHigh() bool {
+	return b.Value > *args.Urgenthigh
+}
+
+func (b bgValue) isHigh() bool {
+	return b.Value > *args.High
+}
+
+func (b bgValue) isLow() bool {
+	return b.Value < *args.Low
 }
 
 func decodedIcon(i string) ([]byte, error) {
