@@ -211,7 +211,7 @@ func (b *bg) alert() {
 
 func (b *bg) getAlerts() (alerts []string) {
 	if b.Direction.IsFallback {
-		if b.LastDirectionAlert != "falied" {
+		if b.LastDirectionAlert != "failed" {
 			alerts = append(alerts, fmt.Sprintf("Failed to get BG direction. %.1f", b.Value.Value))
 			b.LastDirectionAlert = "failed"
 		}
