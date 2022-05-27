@@ -317,10 +317,13 @@ func (b bg) getIcon() []byte {
 }
 
 func (b bg) calculateLowTime() {
-	if b.Value.Timestamp != b.PreviousValue.Timestamp && b.Value.Value < b.PreviousValue.Value {
-		seconds := (b.Value.Timestamp - b.PreviousValue.Timestamp) / 1000
-		changePerSecond := (b.PreviousValue.Value - b.Value.Value) / float64(seconds)
-		secondsToLow := int((b.Value.Value - *args.Low) / changePerSecond)
+	if b.Value.Timestamp != b.PreviousValue.Timestamp {
+		var secondsToLow int
+		if b.Value.Value < b.PreviousValue.Value {
+			seconds := (b.Value.Timestamp - b.PreviousValue.Timestamp) / 1000
+			changePerSecond := (b.PreviousValue.Value - b.Value.Value) / float64(seconds)
+			secondsToLow = int((b.Value.Value - *args.Low) / changePerSecond)
+		}
 		lowTime = time.Now().Add(time.Duration(secondsToLow) * time.Second)
 	}
 }
