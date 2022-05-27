@@ -141,6 +141,7 @@ var (
 	lastBg      bg
 	lowAt       *systray.MenuItem
 	lowTime     time.Time
+	previousBg  *systray.MenuItem
 )
 
 func main() {
@@ -161,6 +162,8 @@ func main() {
 		inRangeAt.Hide()
 		lowAt = systray.AddMenuItem("", "")
 		lowAt.Hide()
+		previousBg = systray.AddMenuItem("", "")
+		previousBg.Hide()
 		open := systray.AddMenuItem("Open in browser", "")
 		refresh := systray.AddMenuItem("Refresh", "")
 		quit := systray.AddMenuItem("Quit", "")
@@ -276,6 +279,10 @@ func (b *bg) getBg() string {
 	_, ok := directions[direction]
 	if !ok {
 		direction = fallbackDirection
+	}
+
+	if b.Value.Timestamp > 0 && b.Value.Timestamp != timestamp {
+		previousBg.SetTitle(fmt.Sprintf("Previous bg: %.1f %s", b.Value.Value, b.Direction.Value))
 	}
 
 	b.Direction = directions[direction]
