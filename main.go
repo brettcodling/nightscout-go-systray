@@ -330,8 +330,10 @@ func (b bg) calculateLowTime() {
 			seconds := (b.Value.Timestamp - b.PreviousValue.Timestamp) / 1000
 			changePerSecond := (b.PreviousValue.Value - b.Value.Value) / float64(seconds)
 			secondsToLow = int((b.Value.Value - *args.Low) / changePerSecond)
+			lowTime = time.Now().Add(time.Duration(secondsToLow) * time.Second)
+		} else {
+			lowTime = time.Now()
 		}
-		lowTime = time.Now().Add(time.Duration(secondsToLow) * time.Second)
 	}
 }
 
