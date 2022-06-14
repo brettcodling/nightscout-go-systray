@@ -3,6 +3,7 @@ module cgm
 go 1.16
 
 require (
+	github.com/boltdb/bolt v1.3.1 // indirect
 	github.com/gen2brain/beeep v0.0.0-20220518085355-d7852edf42fc
 	github.com/getlantern/context v0.0.0-20220418194847-3d5e7a086201 // indirect
 	github.com/getlantern/golog v0.0.0-20211223150227-d4d95a44d873 // indirect

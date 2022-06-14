@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/boltdb/bolt"
 	"github.com/gen2brain/beeep"
 	"github.com/getlantern/systray"
 )
@@ -56,6 +57,14 @@ type icon struct {
 }
 
 var (
+	alertValues = map[string]bool{}
+	alertKeys   = []string{
+		"Predicted low",
+		"Low",
+		"Falling fast",
+		"Urgent high",
+		"Rising fast",
+	}
 	args = flags{
 		Url:        flag.String("url", "", "Your nightscout url e.g. https://example.herokuapp.com"),
 		Urgenthigh: flag.Float64("urgent-high", 15.0, "Your BG urgent high target"),
@@ -157,6 +166,12 @@ func main() {
 		log.Fatal("A nightscout URL is required")
 	}
 
+	db, err := bolt.Open("cgm.db", 0600, nil)
+	if err != nil {
+		log.Fatal("Failed to initialse DB")
+	}
+	defer db.Close()
+
 	systray.Run(func() {
 		inRangeAt = systray.AddMenuItem("", "")
 		inRangeAt.Hide()
@@ -166,6 +181,7 @@ func main() {
 		previousBg.Hide()
 		open := systray.AddMenuItem("Open in browser", "")
 		refresh := systray.AddMenuItem("Refresh", "")
+		addAlertSettings(db)
 		quit := systray.AddMenuItem("Quit", "")
 		go func() {
 			for {
@@ -221,34 +237,44 @@ func (b *bg) getAlerts() (alerts []string) {
 	} else if b.Value.Value != b.PreviousValue.Value {
 		if b.Direction.IsRising {
 			if b.LastDirectionAlert != "rising" {
-				alerts = append(alerts, fmt.Sprintf("Rising fast! %.1f %s", b.Value.Value, b.Direction.Value))
-				b.LastDirectionAlert = "rising"
+				if alertValues["Rising fast"] {
+					alerts = append(alerts, fmt.Sprintf("Rising fast! %.1f %s", b.Value.Value, b.Direction.Value))
+					b.LastDirectionAlert = "rising"
+				}
 			}
 		} else if b.Direction.IsFalling {
 			if b.LastDirectionAlert != "falling" {
-				alerts = append(alerts, fmt.Sprintf("Falling fast! %.1f %s", b.Value.Value, b.Direction.Value))
-				b.LastDirectionAlert = "falling"
+				if alertValues["Falling fast"] {
+					alerts = append(alerts, fmt.Sprintf("Falling fast! %.1f %s", b.Value.Value, b.Direction.Value))
+					b.LastDirectionAlert = "falling"
+				}
 			}
 		}
 	}
 
 	if b.Value.isLow() {
 		if b.LastBgAlert != "low" {
-			alerts = append(alerts, fmt.Sprintf("Low! %.1f %s", b.Value.Value, b.Direction.Value))
-			b.LastBgAlert = "low"
+			if alertValues["Low"] {
+				alerts = append(alerts, fmt.Sprintf("Low! %.1f %s", b.Value.Value, b.Direction.Value))
+				b.LastBgAlert = "low"
+			}
 		}
 	} else if b.Value.isUrgentHigh() {
 		if b.LastBgAlert != "high" {
-			alerts = append(alerts, fmt.Sprintf("Urgent Hight! %.1f %s", b.Value.Value, b.Direction.Value))
-			b.LastBgAlert = "high"
+			if alertValues["Urgent High"] {
+				alerts = append(alerts, fmt.Sprintf("Urgent Hight! %.1f %s", b.Value.Value, b.Direction.Value))
+				b.LastBgAlert = "high"
+			}
 		}
 	}
 
 	if lowTime.After(time.Now()) && lowTime.Before(time.Now().Add(predictLowSeconds*time.Second)) {
-		alerts = append(alerts, fmt.Sprintf("Predicted Low at %s!", lowTime.Format("15:04")))
+		if alertValues["Predicted low"] {
+			alerts = append(alerts, fmt.Sprintf("Predicted Low at %s!", lowTime.Format("15:04")))
+		}
 		lowAt.SetTitle(fmt.Sprintf("Low at: %s", lowTime.Format("15:04")))
 		lowAt.Show()
-	} else if b.Value.Timestamp != b.PreviousValue.Timestamp && b.Value.Value < b.PreviousValue.Value {
+	} else if b.Value.Timestamp != b.PreviousValue.Timestamp {
 		lowAt.Hide()
 	}
 
@@ -291,8 +317,8 @@ func (b *bg) getBg() string {
 		Timestamp: timestamp,
 		Value:     float64(mgdl) / mgdltommol,
 	}
-	b.alert()
 	b.calculateLowTime()
+	b.alert()
 	b.calculateInRangeTime()
 
 	if inRangeTime.After(time.Now()) {
@@ -361,6 +387,47 @@ func (b bgValue) isHigh() bool {
 
 func (b bgValue) isLow() bool {
 	return b.Value < *args.Low
+}
+
+func addAlertSettings(db *bolt.DB) {
+	alerts := systray.AddMenuItem("Alerts", "")
+	db.Batch(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("alerts"))
+		if err != nil {
+			return err
+		}
+		for _, alert := range alertKeys {
+			v := b.Get([]byte(alert))
+			if len(v) == 0 {
+				v = []byte("true")
+			}
+			alertValues[alert] = (string(v) == "true")
+			a := alerts.AddSubMenuItemCheckbox(alert, "", alertValues[alert])
+			go func(alert string) {
+				for {
+					select {
+					case <-a.ClickedCh:
+						if a.Checked() {
+							a.Uncheck()
+						} else {
+							a.Check()
+						}
+						alertValues[alert] = a.Checked()
+						db.Update(func(tx *bolt.Tx) error {
+							v := "false"
+							if a.Checked() {
+								v = "true"
+							}
+							b := tx.Bucket([]byte("alerts"))
+							err := b.Put([]byte(alert), []byte(v))
+							return err
+						})
+					}
+				}
+			}(alert)
+		}
+		return nil
+	})
 }
 
 func decodedIcon(i string) ([]byte, error) {
