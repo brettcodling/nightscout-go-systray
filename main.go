@@ -253,6 +253,10 @@ func (b *bg) alert() {
 	}
 }
 
+func (b *bg) format() string {
+	return fmt.Sprintf("%.1f %s", b.Value.Value, b.Direction.Value)
+}
+
 func (b *bg) getAlerts() (alerts []string) {
 	if b.Direction.IsFallback {
 		if b.LastDirectionAlert != "failed" {
@@ -353,7 +357,7 @@ func (b *bg) getBg() string {
 		inRangeAt.Hide()
 	}
 
-	return fmt.Sprintf("%.1f %s", b.Value.Value, b.Direction.Value)
+	return b.format()
 }
 
 func (b bg) getIcon() []byte {
@@ -492,7 +496,7 @@ func toggleShowCurrent(menuItem *systray.MenuItem, db *bolt.DB) {
 		menuItem.Check()
 		currentBg.Hide()
 		showBg = true
-		setBg()
+		systray.SetTitle(lastBg.format())
 	}
 	db.Update(func(tx *bolt.Tx) error {
 		v := "false"
