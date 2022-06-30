@@ -71,6 +71,7 @@ var (
 		High:       flag.Float64("high", 8.0, "Your BG high target"),
 		Low:        flag.Float64("low", 4.0, "Your BG low target"),
 	}
+	currentBg  *systray.MenuItem
 	directions = map[string]direction{
 		"TripleUp": {
 			Value:      "⤊",
@@ -151,6 +152,7 @@ var (
 	lowAt       *systray.MenuItem
 	lowTime     time.Time
 	previousBg  *systray.MenuItem
+	showBg      bool
 )
 
 func main() {
@@ -172,7 +174,27 @@ func main() {
 	}
 	defer db.Close()
 
+	err = db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("keys"))
+		if err != nil {
+			return err
+		}
+		v := b.Get([]byte("showBg"))
+		if len(v) == 0 {
+			v = []byte("true")
+		}
+		showBg = (string(v) == "true")
+		return nil
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	systray.Run(func() {
+		currentBg = systray.AddMenuItem("", "")
+		if showBg {
+			currentBg.Hide()
+		}
 		inRangeAt = systray.AddMenuItem("", "")
 		inRangeAt.Hide()
 		lowAt = systray.AddMenuItem("", "")
@@ -182,6 +204,7 @@ func main() {
 		open := systray.AddMenuItem("Open in browser", "")
 		refresh := systray.AddMenuItem("Refresh", "")
 		addAlertSettings(db)
+		showCurrent := systray.AddMenuItemCheckbox("Show current value", "", showBg)
 		quit := systray.AddMenuItem("Quit", "")
 		go func() {
 			for {
@@ -190,6 +213,8 @@ func main() {
 					exec.Command("xdg-open", *args.Url).Start()
 				case <-refresh.ClickedCh:
 					setBg()
+				case <-showCurrent.ClickedCh:
+					toggleShowCurrent(showCurrent, db)
 				case <-quit.ClickedCh:
 					systray.Quit()
 				}
@@ -419,8 +444,7 @@ func addAlertSettings(db *bolt.DB) {
 								v = "true"
 							}
 							b := tx.Bucket([]byte("alerts"))
-							err := b.Put([]byte(alert), []byte(v))
-							return err
+							return b.Put([]byte(alert), []byte(v))
 						})
 					}
 				}
@@ -446,7 +470,36 @@ func decodedIcon(i string) ([]byte, error) {
 }
 
 func setBg() {
-	systray.SetTitle(lastBg.getBg())
+	bg := lastBg.getBg()
+	if showBg {
+		systray.SetTitle(bg)
+	}
+	currentBg.SetTitle(bg)
+	if showBg {
+		currentBg.Hide()
+	}
 	icon := lastBg.getIcon()
 	systray.SetIcon(icon)
+}
+
+func toggleShowCurrent(menuItem *systray.MenuItem, db *bolt.DB) {
+	if menuItem.Checked() {
+		menuItem.Uncheck()
+		currentBg.Show()
+		systray.SetTitle("")
+		showBg = false
+	} else {
+		menuItem.Check()
+		currentBg.Hide()
+		showBg = true
+		setBg()
+	}
+	db.Update(func(tx *bolt.Tx) error {
+		v := "false"
+		if menuItem.Checked() {
+			v = "true"
+		}
+		b := tx.Bucket([]byte("keys"))
+		return b.Put([]byte("showBg"), []byte(v))
+	})
 }
